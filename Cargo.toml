@@ -1,0 +1,15 @@
+[package]
+name = "socks5-proxy"
+version = "0.1.0"
+authors = ["Alexander Verhaar <averhaar@schubergphilis.com>"]
+edition = "2018"
+
+[dependencies]
+socks5 = { path="./socks5" }
+clap = "2.33"
+log = "0.4"
+chrono = "0.4"
+async-std = "1.7.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.8"
+env_logger = "0.8"
