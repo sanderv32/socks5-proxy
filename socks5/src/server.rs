@@ -7,16 +7,33 @@ use async_std::prelude::*;
 use async_std::sync::{Arc, Mutex};
 use async_std::task;
 use bytes::{Buf, BufMut};
-use std::net::Shutdown;
+use std::{str::FromStr, net::Shutdown};
 use std::time::Duration;
 use std::collections::HashSet;
-use std::net::ToSocketAddrs;
-use cidr_utils::cidr::Ipv4Cidr;
+use cidr_utils::cidr::{Ipv4Cidr, Ipv6Cidr};
 
-use crate::Config;
+use trust_dns_resolver::Resolver;
+
+use crate::{Config, config::RuleType};
 
 lazy_static! {
     static ref HASHSET: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
+}
+
+enum Host {
+    Name(String),
+    Ip(IpAddr),
+    None,
+}
+
+impl ToString for Host {
+    fn to_string(&self) -> String {
+        match self {
+            Host::Name(e) => e.to_string(),
+            Host::Ip(e) => e.to_string(),
+            Host::None => "None".to_string(),
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -44,24 +61,46 @@ impl Socks5 {
         res
     }
 
-    fn allow(peer: String, rules: Vec<String>) -> io::Result<()> {
-        let ipv4cidr: u32;
-        let default = Ipv4Cidr::from_str("255.255.255.255").unwrap();
+    //    fn allow(peer: std::net::IpAddr, rules: Vec<RuleType>) -> io::Result<()> {
+    fn allow(peer: Host, rules: Vec<RuleType>) -> io::Result<()> {
 
-        let addr = peer.split(":").nth(0).unwrap().to_string();
-        if Ipv4Cidr::is_ipv4_cidr(&addr) {
-            ipv4cidr = Ipv4Cidr::from_str(&addr).unwrap().get_prefix();
-        } else {
-            let mut ipv4 = peer.to_socket_addrs().unwrap().nth(0).unwrap().to_string();
-            ipv4 = ipv4.split(":").nth(0).unwrap().to_string();
-            ipv4cidr = Ipv4Cidr::from_str(&ipv4).unwrap().get_prefix();
-        }
+        let allowed_ip = match &peer {
+            Host::Ip(e) => {
+                match e {
+                    IpAddr::V4(a) => rules.iter().filter(|i| i.is_cidr()).any(|i| {
+                        match Ipv4Cidr::from_str(i.to_string()) {
+                            Ok(e) => e.contains(a),
+                            Err(_e) => {
+                                log::error!("Unable to convert ipv4 CIDR to string");
+                                false
+                            },
+                        }
+                    }),
+                    IpAddr::V6(a) => rules.iter().filter(|i| i.is_cidr()).any(|i| {
+                        match Ipv6Cidr::from_str(i.to_string()) {
+                            Ok(e) => e.contains(a),
+                            Err(_e) => {
+                                log::error!("Unable to convert ipv6 CIDR to string");
+                                false
+                            },
+                        }
+                    }),    
+                }
+            },
+            Host::Name(e) => {
+                let resolver = Resolver::from_system_conf().unwrap();
+                let addr = IpAddr::from(*resolver.ipv4_lookup(e).unwrap().iter().nth(0).unwrap());
+                rules.iter().filter(|i| i.is_hostname()).any(|a| a.to_string() == *e)
+                || Self::allow(Host::Ip(addr), rules).is_ok()
+            }
+            Host::None => false,
+        };
 
-        if !rules.iter().any(|i| Ipv4Cidr::from_str(i).unwrap_or(default).contains(ipv4cidr) || *i == addr)
+        if !allowed_ip
         {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::ConnectionAborted,
-                "Filter: connection denied"
+                format!("Filter: connection denied [{}]", peer.to_string())
             ));
         }
 
@@ -73,7 +112,7 @@ impl Socks5 {
         let peer_addr = stream.peer_addr()?;
         log::debug!("Accepted from: {}", peer_addr);
 
-        Self::allow(peer_addr.to_string(), config.ingress.allow.clone())?;
+        Self::allow(Host::Ip(peer_addr.ip()), config.get_ingress())?;
 
         let mut reader = stream.clone();
         let mut writer = stream;
@@ -112,6 +151,7 @@ impl Socks5 {
         let atype = buffer[3];
     
         let mut addr_port = String::from("");
+        let mut ip_addr: Host = Host::None;
         let mut flag_addr_ok = true;
     
         // parse addr and port first
@@ -125,6 +165,7 @@ impl Socks5 {
                 let port: u16 = buffer[4..6].as_ref().get_u16();
                 let socket = SocketAddrV4::new(v4addr, port);
                 addr_port = format!("{}", socket);
+                ip_addr = Host::Ip(v4addr.into());
                 // println!("ipv4: {}", addr_port);
             }
             0x03 => {
@@ -134,6 +175,11 @@ impl Socks5 {
                 let port: u16 = buffer[len..len + 2].as_ref().get_u16();
                 if let Ok(addr) = std::str::from_utf8(&buffer[0..len]) {
                     addr_port = format!("{}:{}", addr, port);
+                    if let Err(_) = IpAddr::from_str(addr) {
+                        ip_addr = Host::Name(addr.to_string());
+                    } else {
+                        ip_addr = Host::Ip(IpAddr::from_str(addr).unwrap());
+                    }
                 } else {
                     flag_addr_ok = false;
                 }
@@ -147,6 +193,7 @@ impl Socks5 {
                 let port: u16 = buffer[16..18].as_ref().get_u16();
                 let socket = SocketAddrV6::new(v6addr, port, 0, 0);
                 addr_port = format!("{}", socket);
+                ip_addr = Host::Ip(v6addr.into());
             }
             _ => {
                 flag_addr_ok = false;
@@ -164,7 +211,7 @@ impl Socks5 {
             ));
         }
 
-        Self::allow(addr_port.to_string(), config.egress.allow.clone())?;
+        Self::allow(ip_addr, config.get_egress())?;
 
         // parse cmd: support CONNECT(0x01) and UDP (0x03) currently
         match cmd {

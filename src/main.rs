@@ -29,6 +29,9 @@ fn main() -> std::io::Result<()> {
         .value_of("config").unwrap().to_string()
     ).unwrap());
 
+    let _bla1 = config.get_ingress();
+    let _bla2 = config.get_egress();
+
     log::debug!("Config:  {}", matches.value_of("config").unwrap());
     log::debug!("Listen:  {}", &config.listen);
     log::debug!("Ingress: {}", &config.ingress.allow.join(", "));
