@@ -77,7 +77,8 @@ impl Socks5 {
                         }
                     }),
                     IpAddr::V6(a) => rules.iter().filter(|i| i.is_cidr()).any(|i| {
-                        match Ipv6Cidr::from_str(i.to_string()) {
+                        let addr= i.to_string().replace("[", "").replace("]", "").to_string();
+                        match Ipv6Cidr::from_str(addr) {
                             Ok(e) => e.contains(a),
                             Err(_e) => {
                                 log::error!("Unable to convert ipv6 CIDR to string");
@@ -129,11 +130,12 @@ impl Socks5 {
         let methods = buffer[1] as usize;
         reader.read_exact(&mut buffer[0..methods]).await?;
         let mut has_no_auth = false;
-        for i in 0..methods {
-            if buffer[i] == 0x00 {
+        for item in buffer.iter().take(methods) {
+            if *item == 0x00 {
                 has_no_auth = true;
             }
         }
+
         if !has_no_auth {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::ConnectionAborted,
@@ -174,8 +176,8 @@ impl Socks5 {
                 reader.read_exact(&mut buffer[0..len + 2]).await?;
                 let port: u16 = buffer[len..len + 2].as_ref().get_u16();
                 if let Ok(addr) = std::str::from_utf8(&buffer[0..len]) {
-                    addr_port = format!("{}:{}", addr, port);
-                    if let Err(_) = IpAddr::from_str(addr) {
+                    addr_port = format!("{}:{}", &addr, port);
+                    if IpAddr::from_str(addr).is_err() {
                         ip_addr = Host::Name(addr.to_string());
                     } else {
                         ip_addr = Host::Ip(IpAddr::from_str(addr).unwrap());
@@ -276,13 +278,8 @@ impl Socks5 {
                             let mut buf = vec![0u8; 1];
     
                             // close connection if we read more bytes
-                            match reader.read_exact(&mut buf[0..1]).await {
-                                Ok(_) => {
-                                    // eprintln!("read something {:x?}", buf);
-                                }
-                                Err(_) => {
-                                    // eprintln!("error while reading");
-                                }
+                            if let Err(e) = reader.read_exact(&mut buf[0..1]).await {
+                                log::debug!("Error while reading - {}", e);
                             }
                             HASHSET.lock().await.remove(&peer_addr.to_string());
                             log::debug!("udp-tcp disconnect from {}", peer_addr);
