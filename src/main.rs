@@ -23,18 +23,19 @@ fn main() -> std::io::Result<()> {
                 .required(false)
                 .takes_value(true)
                 .default_value("socks5.conf")
+                .env("CONFIG")
         ).get_matches();
 
-    let config = Arc::new(Config::load_from_file(matches
+    let config = Arc::new(Config::load(matches
         .value_of("config").unwrap().to_string()
     ).unwrap());
 
     log::debug!("Config:  {}", matches.value_of("config").unwrap());
-    log::debug!("Listen:  {}", &config.listen);
-    log::debug!("Ingress: {}", &config.ingress.allow.join(", "));
-    log::debug!("Egress:  {}", &config.egress.allow.join(", "));
+    log::debug!("Listen:  {}", &config.listen.as_ref().unwrap());
+    log::debug!("Ingress: {}", &config.ingress.as_ref().unwrap().join(", "));
+    log::debug!("Egress:  {}", &config.egress.as_ref().unwrap().join(", "));
 
-    let bind_str = config.listen.clone();
+    let bind_str = config.listen.as_ref().unwrap().clone();
     let bind_addr = bind_str.split(":").nth(0).expect("127.0.0.1");
 
     task::block_on( async {    

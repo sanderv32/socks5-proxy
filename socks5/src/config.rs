@@ -2,9 +2,14 @@
 
 extern crate serde_yaml;
 
-use std::{fs::File, io::Error};
+use std::fs::File;
+use anyhow::Context;
 use cidr_utils::cidr::IpCidr;
-use serde::{Serialize, Deserialize};
+use serde::Deserialize;
+use merge::Merge;
+
+const LISTEN: &'static str = "127.0.0.1:1080";
+const ALLOW_ALL: &'static str = "0.0.0.0/0";
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum RuleType {
@@ -39,45 +44,57 @@ impl RuleType {
     }
 }
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Deserialize, Default, Debug)]
 pub struct Gress {
     pub allow: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize, Debug, merge::Merge)]
 pub struct Config {
-    pub listen: String,
+    #[merge(strategy = merge::option::overwrite_none)]
+    pub listen: Option<String>,
 
-    pub ingress: Gress,
-    pub egress: Gress,
+    #[merge(strategy = merge::option::overwrite_none)]
+    pub ingress: Option<Vec<String>>,
+    #[merge(strategy = merge::option::overwrite_none)]
+    pub egress: Option<Vec<String>>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            listen: "127.0.0.1:1080".to_string(),
-            ingress: Gress {
-                allow: vec!["0.0.0.0/0".to_string()],
-            },
-            egress: Gress {
-                allow: vec!["0.0.0.0/0".to_string()],
-            }
+            listen: Some(LISTEN.to_string()),
+            ingress: Some(vec![ALLOW_ALL.to_string()]),
+            egress: Some(vec![ALLOW_ALL.to_string()]),
         }
     }
 }
 
 impl Config {
     pub fn new() -> Self {
-    
         Self {
-            ..Default::default()
+            listen: None,
+            ingress: None,
+            egress: None,
         }
     }
 
-    pub fn load_from_file(filename: String) -> Result<Config, Error> {
-        let file = File::open(filename)?;
-        let config: Config = serde_yaml::from_reader(file).unwrap();
+    pub fn load(filename: String) -> anyhow::Result<Self> {
+        let mut config = Config::new();
+        config.merge(Config::load_from_env()?);
+        if let Some(user_config) = Config::load_from_file(filename)? {
+            config.merge(user_config);
+        }
         Ok(config)
+    }
+
+    pub fn load_from_env() -> anyhow::Result<Config> {
+        envy::prefixed("SOCKS5_").from_env().context("Failed to parse environment variables")
+    }
+
+    pub fn load_from_file(filename: String) -> anyhow::Result<Option<Config>> {
+        let file = File::open(filename)?;
+        serde_yaml::from_reader(file).context("Could not load config file")
     }
 
     fn cidr_rules(r: Vec<String>) -> Vec<RuleType> {
@@ -96,11 +113,11 @@ impl Config {
     }
 
     pub fn get_ingress(&self) -> Vec<RuleType> {
-        Self::cidr_rules(self.ingress.allow.clone())
+        Self::cidr_rules(self.ingress.as_ref().unwrap().clone())
     }
 
     pub fn get_egress(&self) -> Vec<RuleType> {
-        Self::cidr_rules(self.egress.allow.clone())
+        Self::cidr_rules(self.egress.as_ref().unwrap().clone())
     }
 }
 
