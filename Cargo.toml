@@ -2,7 +2,7 @@
 name = "socks5-proxy"
 version = "0.1.0"
 authors = ["Alexander Verhaar <averhaar@schubergphilis.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 socks5 = { path="./socks5" }
