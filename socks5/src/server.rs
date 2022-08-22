@@ -7,14 +7,14 @@ use async_std::prelude::*;
 use async_std::sync::{Arc, Mutex};
 use async_std::task;
 use bytes::{Buf, BufMut};
-use std::{str::FromStr, net::Shutdown};
-use std::time::Duration;
-use std::collections::HashSet;
 use cidr_utils::cidr::{Ipv4Cidr, Ipv6Cidr};
+use std::collections::HashSet;
+use std::time::Duration;
+use std::{net::Shutdown, str::FromStr};
 
 use trust_dns_resolver::Resolver;
 
-use crate::{Config, config::RuleType};
+use crate::{config::RuleType, Config};
 
 lazy_static! {
     static ref HASHSET: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
@@ -37,8 +37,7 @@ impl ToString for Host {
 }
 
 #[derive(Copy, Clone)]
-pub struct Socks5 {
-}
+pub struct Socks5 {}
 
 impl Socks5 {
     // start from ATYPE, then ADDRESS and PORT
@@ -63,45 +62,44 @@ impl Socks5 {
 
     //    fn allow(peer: std::net::IpAddr, rules: Vec<RuleType>) -> io::Result<()> {
     fn allow(peer: Host, rules: Vec<RuleType>) -> io::Result<()> {
-
         let allowed_ip = match &peer {
-            Host::Ip(e) => {
-                match e {
-                    IpAddr::V4(a) => rules.iter().filter(|i| i.is_cidr()).any(|i| {
-                        match Ipv4Cidr::from_str(i.to_string()) {
-                            Ok(e) => e.contains(a),
-                            Err(_e) => {
-                                log::error!("Unable to convert ipv4 CIDR to string");
-                                false
-                            },
+            Host::Ip(e) => match e {
+                IpAddr::V4(a) => rules.iter().filter(|i| i.is_cidr()).any(|i| {
+                    match Ipv4Cidr::from_str(i.to_string()) {
+                        Ok(e) => e.contains(a),
+                        Err(_e) => {
+                            log::error!("Unable to convert ipv4 CIDR to string");
+                            false
                         }
-                    }),
-                    IpAddr::V6(a) => rules.iter().filter(|i| i.is_cidr()).any(|i| {
-                        let addr= i.to_string().replace("[", "").replace("]", "").to_string();
-                        match Ipv6Cidr::from_str(addr) {
-                            Ok(e) => e.contains(a),
-                            Err(_e) => {
-                                log::error!("Unable to convert ipv6 CIDR to string");
-                                false
-                            },
+                    }
+                }),
+                IpAddr::V6(a) => rules.iter().filter(|i| i.is_cidr()).any(|i| {
+                    let addr = i.to_string().replace('[', "").replace(']', "");
+                    match Ipv6Cidr::from_str(addr) {
+                        Ok(e) => e.contains(a),
+                        Err(_e) => {
+                            log::error!("Unable to convert ipv6 CIDR to string");
+                            false
                         }
-                    }),    
-                }
+                    }
+                }),
             },
             Host::Name(e) => {
                 let resolver = Resolver::from_system_conf().unwrap();
-                let addr = IpAddr::from(*resolver.ipv4_lookup(e).unwrap().iter().nth(0).unwrap());
-                rules.iter().filter(|i| i.is_hostname()).any(|a| a.to_string() == *e)
-                || Self::allow(Host::Ip(addr), rules).is_ok()
+                let addr = IpAddr::from(*resolver.ipv4_lookup(e).unwrap().iter().next().unwrap());
+                rules
+                    .iter()
+                    .filter(|i| i.is_hostname())
+                    .any(|a| a.to_string() == *e)
+                    || Self::allow(Host::Ip(addr), rules).is_ok()
             }
             Host::None => false,
         };
 
-        if !allowed_ip
-        {
+        if !allowed_ip {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::ConnectionAborted,
-                format!("Filter: connection denied [{}]", peer.to_string())
+                format!("Filter: connection denied [{}]", peer.to_string()),
             ));
         }
 
@@ -117,7 +115,7 @@ impl Socks5 {
 
         let mut reader = stream.clone();
         let mut writer = stream;
-    
+
         // read socks5 header
         let mut buffer = vec![0u8; 512];
         reader.read_exact(&mut buffer[0..2]).await?;
@@ -142,20 +140,20 @@ impl Socks5 {
                 "only no-auth is supported!",
             )); // stream will be closed automaticly
         }
-    
+
         // server send to client accepted auth method (0x00 no-auth only yet)
         writer.write(&[0x05u8, 0x00]).await?;
         writer.flush().await?;
-    
+
         // read socks5 cmd
         reader.read_exact(&mut buffer[0..4]).await?;
         let cmd = buffer[1]; // support 0x01(CONNECT) and 0x03(UDP Associate)
         let atype = buffer[3];
-    
+
         let mut addr_port = String::from("");
         let mut ip_addr: Host = Host::None;
         let mut flag_addr_ok = true;
-    
+
         // parse addr and port first
         match atype {
             0x01 => {
@@ -203,9 +201,7 @@ impl Socks5 {
         }
         if !flag_addr_ok {
             writer
-                .write(&[
-                    0x05u8, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                ])
+                .write(&[0x05u8, 0x08, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
                 .await?;
             return Err(std::io::Error::new(
                 std::io::ErrorKind::AddrNotAvailable,
@@ -218,14 +214,11 @@ impl Socks5 {
         // parse cmd: support CONNECT(0x01) and UDP (0x03) currently
         match cmd {
             0x01 => {
-
                 //create connection to remote server
                 if let Ok(remote_stream) = TcpStream::connect(addr_port.as_str()).await {
                     log::debug!("connect to {} ok", addr_port);
                     writer
-                        .write(&[
-                            0x05u8, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                        ])
+                        .write(&[0x05u8, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
                         .await?;
                     let mut remote_read = remote_stream.clone();
                     let mut remote_write = remote_stream;
@@ -246,9 +239,7 @@ impl Socks5 {
                     writer.shutdown(Shutdown::Both)?
                 } else {
                     writer
-                        .write(&[
-                            0x05u8, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                        ])
+                        .write(&[0x05u8, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
                         .await?;
                     return Err(std::io::Error::new(
                         std::io::ErrorKind::ConnectionRefused,
@@ -262,21 +253,21 @@ impl Socks5 {
                 let raw_socket = UdpSocket::bind(format!("{}:0", addr)).await?;
                 let socket = Arc::new(raw_socket);
                 let socket_addr = socket.local_addr();
-    
+
                 let mut addr_port = String::from("");
-    
+
                 match socket_addr {
                     Ok(addr) => {
                         writer.write(&[0x05u8, 0x00, 0x00]).await?;
 
                         let content = Self::socket_addr_to_vec(addr);
                         writer.write(&content).await?;
-    
+
                         HASHSET.lock().await.insert(peer_addr.to_string());
-    
+
                         task::spawn(async move {
                             let mut buf = vec![0u8; 1];
-    
+
                             // close connection if we read more bytes
                             if let Err(e) = reader.read_exact(&mut buf[0..1]).await {
                                 log::debug!("Error while reading - {}", e);
@@ -284,19 +275,19 @@ impl Socks5 {
                             HASHSET.lock().await.remove(&peer_addr.to_string());
                             log::debug!("udp-tcp disconnect from {}", peer_addr);
                         });
-    
+
                         //start to transfer data
                         //recv first packet
                         let mut buf = vec![0u8; 2048];
                         let (mut n, local_peer) = socket.recv_from(&mut buf).await?;
-    
+
                         let socket_remote_raw = UdpSocket::bind("0.0.0.0:0").await?;
                         let socket_remote_reader = Arc::new(socket_remote_raw);
                         let socket_remote_writer = socket_remote_reader.clone();
                         let local_socket_writer = socket.clone();
                         task::spawn(async move {
                             let mut buf = vec![0u8; 2048];
-    
+
                             loop {
                                 if HASHSET.lock().await.contains(&peer_addr.to_string()) {
                                     let res = io::timeout(Duration::from_secs(5), async {
@@ -306,7 +297,7 @@ impl Socks5 {
                                     match res {
                                         Ok((n, remote_addr)) => {
                                             let mut write_packet = vec![0x0u8, 0, 0];
-    
+
                                             let content = Self::socket_addr_to_vec(remote_addr);
                                             for val in content.iter() {
                                                 write_packet.push(*val);
@@ -359,8 +350,9 @@ impl Socks5 {
                                                 if n < 4 + len + 2 {
                                                     addr_is_ok = false;
                                                 } else {
-                                                    let port: u16 =
-                                                        buf[5 + len..5 + 2 + len].as_ref().get_u16();
+                                                    let port: u16 = buf[5 + len..5 + 2 + len]
+                                                        .as_ref()
+                                                        .get_u16();
                                                     if let Ok(addr) =
                                                         std::str::from_utf8(&buf[5..5 + len])
                                                     {
@@ -376,11 +368,13 @@ impl Socks5 {
                                                     addr_is_ok = false;
                                                 } else {
                                                     // ipv6: 16bytes + port
-                                                    let mut tmp_array: [u8; 16] = Default::default();
+                                                    let mut tmp_array: [u8; 16] =
+                                                        Default::default();
                                                     tmp_array.copy_from_slice(&buf[4..20]);
                                                     let v6addr = Ipv6Addr::from(tmp_array);
                                                     let port: u16 = buf[20..22].as_ref().get_u16();
-                                                    let socket = SocketAddrV6::new(v6addr, port, 0, 0);
+                                                    let socket =
+                                                        SocketAddrV6::new(v6addr, port, 0, 0);
                                                     addr_port = format!("{}", socket);
                                                     idx = 22;
                                                 }
@@ -388,7 +382,11 @@ impl Socks5 {
                                             _ => {}
                                         }
                                         if addr_is_ok {
-                                            log::debug!("send UDP to {} for {}", addr_port, peer_addr);
+                                            log::debug!(
+                                                "send UDP to {} for {}",
+                                                addr_port,
+                                                peer_addr
+                                            );
                                             let _ = socket_remote_writer
                                                 .send_to(&buf[idx..n], &addr_port)
                                                 .await;
@@ -420,9 +418,7 @@ impl Socks5 {
                     }
                     Err(_) => {
                         writer
-                            .write(&[
-                                0x05u8, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                            ])
+                            .write(&[0x05u8, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
                             .await?;
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::ConnectionRefused,
@@ -433,9 +429,7 @@ impl Socks5 {
             }
             _ => {
                 writer
-                    .write(&[
-                        0x05u8, 0x07, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                    ])
+                    .write(&[0x05u8, 0x07, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
                     .await?;
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::ConnectionAborted,
@@ -443,8 +437,8 @@ impl Socks5 {
                 ));
             }
         }
-    
+
         log::debug!("disconnect from {}", peer_addr);
         Ok(())
-    }    
+    }
 }

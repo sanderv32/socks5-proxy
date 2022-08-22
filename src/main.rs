@@ -23,12 +23,11 @@ fn main() -> std::io::Result<()> {
                 .required(false)
                 .takes_value(true)
                 .default_value("socks5.conf")
-                .env("CONFIG")
-        ).get_matches();
+                .env("CONFIG"),
+        )
+        .get_matches();
 
-    let config = Arc::new(Config::load(matches
-        .value_of("config").unwrap().to_string()
-    ).unwrap());
+    let config = Arc::new(Config::load(matches.value_of("config").unwrap().to_string()).unwrap());
 
     log::debug!("Config:  {}", matches.value_of("config").unwrap());
     log::debug!("Listen:  {}", &config.listen.as_ref().unwrap());
@@ -36,9 +35,9 @@ fn main() -> std::io::Result<()> {
     log::debug!("Egress:  {}", &config.egress.as_ref().unwrap().join(", "));
 
     let bind_str = config.listen.as_ref().unwrap().clone();
-    let bind_addr = bind_str.split(":").nth(0).expect("127.0.0.1");
+    let bind_addr = bind_str.split(':').next().expect("127.0.0.1");
 
-    task::block_on( async {    
+    task::block_on(async {
         let listener = TcpListener::bind(&bind_str).await?;
         log::info!("Listening on {}", listener.local_addr()?);
 
@@ -50,9 +49,9 @@ fn main() -> std::io::Result<()> {
 
             let cfg = Arc::clone(&config);
             task::spawn(async {
-                match Socks5::process(stream, addr, cfg).await {
-                    Ok(()) => {}
-                    Err(e) => {
+                if let Err(e) = Socks5::process(stream, addr, cfg).await {
+                    // We ignore "Socket not connected" errors for now
+                    if e.raw_os_error() != Some(107) {
                         log::error!("Error: {}", e);
                     }
                 }

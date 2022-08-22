@@ -2,14 +2,14 @@
 
 extern crate serde_yaml;
 
-use std::fs::File;
 use anyhow::Context;
 use cidr_utils::cidr::IpCidr;
-use serde::Deserialize;
 use merge::Merge;
+use serde::Deserialize;
+use std::fs::File;
 
-const LISTEN: &'static str = "127.0.0.1:1080";
-const ALLOW_ALL: &'static str = "0.0.0.0/0";
+const LISTEN: &str = "127.0.0.1:1080";
+const ALLOW_ALL: &str = "0.0.0.0/0";
 
 #[derive(PartialEq, Eq, Debug)]
 pub enum RuleType {
@@ -21,9 +21,7 @@ impl ToString for RuleType {
     fn to_string(&self) -> String {
         match self {
             RuleType::Hostname(e) => e.to_string(),
-            RuleType::CIDR(e) => {
-                e.to_string()
-            },
+            RuleType::CIDR(e) => e.to_string(),
         }
     }
 }
@@ -89,7 +87,9 @@ impl Config {
     }
 
     pub fn load_from_env() -> anyhow::Result<Config> {
-        envy::prefixed("SOCKS5_").from_env().context("Failed to parse environment variables")
+        envy::prefixed("SOCKS5_")
+            .from_env()
+            .context("Failed to parse environment variables")
     }
 
     pub fn load_from_file(filename: String) -> anyhow::Result<Option<Config>> {
@@ -103,10 +103,10 @@ impl Config {
             match IpCidr::from_str(&rule) {
                 Ok(e) => {
                     rules.push(RuleType::CIDR(e));
-                },
+                }
                 Err(_) => {
                     rules.push(RuleType::Hostname(rule));
-                },
+                }
             }
         }
         rules
@@ -123,9 +123,9 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    use cidr_utils::cidr::IpCidr;
     use std::net::IpAddr;
     use std::str::FromStr;
-    use cidr_utils::cidr::IpCidr;
 
     use crate::config::RuleType;
 
@@ -143,13 +143,42 @@ mod tests {
         let hostname_3 = "localhost";
 
         // Check CIDR's
-        assert_eq!(true, rules.iter().filter(|i| i.is_cidr()).any(|a| IpCidr::from_str(a.to_string()).unwrap().contains(ip_1)));
-        assert_eq!(false, rules.iter().filter(|i| i.is_cidr()).any(|a| IpCidr::from_str(a.to_string()).unwrap().contains(ip_2)));
+        assert_eq!(
+            true,
+            rules
+                .iter()
+                .filter(|i| i.is_cidr())
+                .any(|a| IpCidr::from_str(a.to_string()).unwrap().contains(ip_1))
+        );
+        assert_eq!(
+            false,
+            rules
+                .iter()
+                .filter(|i| i.is_cidr())
+                .any(|a| IpCidr::from_str(a.to_string()).unwrap().contains(ip_2))
+        );
 
         // Check Hostnames
-        assert_eq!(true, rules.iter().filter(|i| i.is_hostname()).any(|a| a.to_string() == hostname_1));
-        assert_eq!(true, rules.iter().filter(|i| i.is_hostname()).any(|a| a.to_string() == hostname_3));
-        assert_eq!(false, rules.iter().filter(|i| i.is_hostname()).any(|a| a.to_string() == hostname_2));
-
+        assert_eq!(
+            true,
+            rules
+                .iter()
+                .filter(|i| i.is_hostname())
+                .any(|a| a.to_string() == hostname_1)
+        );
+        assert_eq!(
+            true,
+            rules
+                .iter()
+                .filter(|i| i.is_hostname())
+                .any(|a| a.to_string() == hostname_3)
+        );
+        assert_eq!(
+            false,
+            rules
+                .iter()
+                .filter(|i| i.is_hostname())
+                .any(|a| a.to_string() == hostname_2)
+        );
     }
 }
