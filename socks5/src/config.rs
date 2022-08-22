@@ -167,7 +167,7 @@ mod tests {
                 .any(|a| a.to_string() == hostname_1)
         );
         assert_eq!(
-            true,
+            false,
             rules
                 .iter()
                 .filter(|i| i.is_hostname())
