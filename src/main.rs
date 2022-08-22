@@ -3,7 +3,7 @@ extern crate serde_yaml;
 use async_std::net::TcpListener;
 use async_std::prelude::*;
 use async_std::task;
-use clap::{App, Arg};
+use clap::{Arg, Command};
 use std::sync::Arc;
 
 use socks5::{Config, Socks5};
@@ -11,12 +11,12 @@ use socks5::{Config, Socks5};
 fn main() -> std::io::Result<()> {
     env_logger::init();
 
-    let matches = App::new("A lightweight and fast socks5 server written in Rust")
+    let matches = Command::new("A lightweight and fast socks5 server written in Rust")
         .version(env!("CARGO_PKG_VERSION"))
         .author(env!("CARGO_PKG_AUTHORS"))
         .arg(
-            Arg::with_name("config")
-                .short("c")
+            Arg::new("config")
+                .short('c')
                 .long("config")
                 .value_name("CONFIG")
                 .help("config file")
