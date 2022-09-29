@@ -12,7 +12,7 @@ fn main() -> std::io::Result<()> {
     env_logger::init();
 
     let matches = Command::new("A lightweight and fast socks5 server written in Rust")
-        .version(env!("CARGO_PKG_VERSION"))
+        .version(concat!(env!("CARGO_PKG_VERSION"), '+', env!("GIT_HASH")))
         .author(env!("CARGO_PKG_AUTHORS"))
         .arg(
             Arg::new("config")
@@ -49,10 +49,15 @@ fn main() -> std::io::Result<()> {
 
             let cfg = Arc::clone(&config);
             task::spawn(async {
-                if let Err(e) = Socks5::process(stream, addr, cfg).await {
-                    // We ignore "Socket not connected" errors for now
-                    if e.raw_os_error() != Some(107) {
-                        log::error!("Error: {}", e);
+                let peer_addr = &stream.peer_addr().ok();
+                if peer_addr.is_some() {
+                    if let Err(e) = Socks5::process(stream, addr, cfg).await {
+                        match e.kind() {
+                            std::io::ErrorKind::NotConnected => {
+                                log::error!("Not connected to {}", peer_addr.unwrap())
+                            }
+                            _ => log::error!("Error: {}", e),
+                        }
                     }
                 }
             });

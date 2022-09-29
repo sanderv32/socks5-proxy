@@ -1,18 +1,18 @@
-image: docker:stable
+image: docker:stable-dind
 
 services:
-  - name: docker:dind
+  - name: docker:stable-dind
 
 stages:
   - build
 
 before_script:
-    - docker info
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
-    
+  - docker info
+  - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+
 build:
-    stage: build
-    when: manual
-    script:
-      - docker build -t mcc/socks5-proxy:latest -f Dockerfile
-      - docker push "$CI_REGISTRY"
+  stage: build
+  when: manual
+  script:
+    - docker build -t mcc/socks5-proxy:latest -f Dockerfile
+    - docker push "$CI_REGISTRY"

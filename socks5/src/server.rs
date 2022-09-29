@@ -108,7 +108,7 @@ impl Socks5 {
 
     pub async fn process(stream: TcpStream, addr: String, config: Arc<Config>) -> io::Result<()> {
         let config = config.clone();
-        let peer_addr = stream.peer_addr()?;
+        let peer_addr = stream.peer_addr().unwrap();
         log::debug!("Accepted from: {}", peer_addr);
 
         Self::allow(Host::Ip(peer_addr.ip()), config.get_ingress())?;
@@ -233,7 +233,10 @@ impl Socks5 {
                         let _ = reader.shutdown(Shutdown::Both);
                         let _ = remote_write.shutdown(Shutdown::Both);
                     });
-                    io::copy(&mut remote_read, &mut writer).await?;
+                    match io::copy(&mut remote_read, &mut writer).await {
+                        Ok(_) => {}
+                        Err(e) => log::error!("Broken Pipe: {}", e),
+                    };
                     task::sleep(Duration::from_secs(30)).await;
                     remote_read.shutdown(Shutdown::Both)?;
                     writer.shutdown(Shutdown::Both)?
