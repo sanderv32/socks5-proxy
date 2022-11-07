@@ -1,16 +1,6 @@
-[package]
-name = "socks5-proxy"
-version = "0.2.0"
-authors = ["Alexander Verhaar <averhaar@schubergphilis.com>"]
-edition = "2021"
-
-[dependencies]
-socks5 = { path="./socks5" }
-merge = { path = "./merge-rs" }
-clap = { version = "3.2", features = ["env"] }
-log = "0.4"
-chrono = "0.4"
-async-std = "1.12"
-serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.9"
-env_logger = "0.9"
+[workspace]
+members = [
+    "cli",
+    "socks5",
+    "merge-rs",
+]

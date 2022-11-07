@@ -21,15 +21,15 @@ fn main() -> std::io::Result<()> {
                 .value_name("CONFIG")
                 .help("config file")
                 .required(false)
-                .takes_value(true)
                 .default_value("socks5.conf")
                 .env("CONFIG"),
         )
         .get_matches();
 
-    let config = Arc::new(Config::load(matches.value_of("config").unwrap().to_string()).unwrap());
+    let config =
+        Arc::new(Config::load(matches.get_one::<String>("config").unwrap().to_string()).unwrap());
 
-    log::debug!("Config:  {}", matches.value_of("config").unwrap());
+    log::debug!("Config:  {}", matches.get_one::<String>("config").unwrap());
     log::debug!("Listen:  {}", &config.listen.as_ref().unwrap());
     log::debug!("Ingress: {}", &config.ingress.as_ref().unwrap().join(", "));
     log::debug!("Egress:  {}", &config.egress.as_ref().unwrap().join(", "));

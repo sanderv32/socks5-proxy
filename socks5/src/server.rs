@@ -74,7 +74,7 @@ impl Socks5 {
                     }
                 }),
                 IpAddr::V6(a) => rules.iter().filter(|i| i.is_cidr()).any(|i| {
-                    let addr = i.to_string().replace('[', "").replace(']', "");
+                    let addr = i.to_string().replace(['[', ']'], "");
                     match Ipv6Cidr::from_str(addr) {
                         Ok(e) => e.contains(a),
                         Err(_e) => {
